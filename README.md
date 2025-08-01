@@ -1,4 +1,4 @@
-# Page History Table Requirements
+# Page History Table Requirements - Final Version
 
 ## Core Concept
 Track mode and status transitions for items by creating historical records from revision data, with support for multiple hafizes and advanced graduation logic.
@@ -37,10 +37,47 @@ Store in page_history Table
 - **Same Status**: If `from_status == to_status`, set both to `NULL`
 - **Same Mode**: If `from_mode == to_mode`, set both to `NULL`
 
-### Date Logic for Mode 5 Transitions
-- **Default**: Use `revision_date` from revision record
-- **Mode 5 Special Case**: If transitioning **TO mode 5** AND `srs_start_date` exists in `hafizs_items`, use `srs_start_date`
-- **Simplified Logic**: No longer checks if hafizs_items mode matches - just checks if srs_start_date is not null
+### Advanced Date Logic for Mode Transitions
+
+#### Valid Transitions (6 total)
+The system supports exactly 6 valid mode transitions:
+1. **null → 2** (Not-Started → New Memorization)
+2. **2 → 3** (New Memorization → Daily) 
+3. **3 → 4** (Daily → Weekly)
+4. **4 → 1** (Weekly → Full Cycle)
+5. **1 → 5** (Full Cycle → SRS)
+6. **5 → 1** (SRS → Full Cycle)
+
+#### Date Assignment Rules by Transition Type
+
+**Current Record Date** (transitions 1, 2, 5):
+- **null → 2**: Use current revision_date (initial mode assignment)
+- **2 → 3**: Use current revision_date (entering Daily)
+- **1 → 5**: Use current revision_date (entering SRS) *
+
+**Previous Record Date** (transitions 3, 4, 6):
+- **3 → 4**: Use previous revision_date (Daily completion)
+- **4 → 1**: Use previous revision_date (Weekly completion)  
+- **5 → 1**: Use previous revision_date (SRS graduation)
+
+**Mode 5 Override Rule** (*applies to 1→5 transition):
+- If transitioning **TO mode 5** AND `srs_start_date` exists in hafizs_items
+- **Override the base date** with `srs_start_date`
+- This takes precedence over the "current record date" rule for 1→5
+
+#### Implementation Logic
+```python
+transition = (current_mode, new_mode)  # None = initial state 6
+
+if transition in [(None, 2), (2, 3), (1, 5)]:
+    date_to_use = revision['revision_date']  # Current
+elif transition in [(3, 4), (4, 1), (5, 1)]:
+    date_to_use = previous_revision['revision_date']  # Previous
+    
+# Override for mode 5 transitions
+if new_mode == 5 and srs_start_date exists:
+    date_to_use = srs_start_date
+```
 
 ### Advanced Graduation Logic (Priority Order)
 
